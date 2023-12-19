@@ -36,12 +36,7 @@ PROGRESS_ESCALATION = [
 class Agent:
 
     def __init__(self, args):
-        self.__lcd: MyLCD
-        self.__my_pin_handler: PinHandler
-        self.__my_context: Context
-        self.__my_audio_player: AudioPlayer
-        self.__my_status_job: StatusJob
-        self.__mqtt_client: mqtt.Client
+        # contains the timer name when progress runs - empty otherwise
         self.__progress_bar: str = ""
         self.__previous_step: int = -1
         self.WORKSPACE = args[1]
@@ -95,6 +90,7 @@ class Agent:
 
     def on_connect(self, client, userdata, flags, rc):
         self.__my_context.log.info("Connected with result code " + str(rc))
+        self.__my_status_job.num_of_reconnects += 1
         self.__mqtt_client.subscribe(self.__my_context.MQTT_INBOUND)
         net_status = NET_STATUS
         net_status["blu"] = "netstatus"
@@ -115,7 +111,7 @@ class Agent:
         if step == self.__previous_step:  # only set LEDs when necessary
             return
         self.__previous_step = step
-
+        # construct a pin handler scheme
         pins = PROGRESS_ESCALATION[step][0]
         speed = PROGRESS_ESCALATION[step][1]
         self.__my_context.log.trace(f"{step}: {pins} -> {speed}")
@@ -137,8 +133,9 @@ class Agent:
             match cmd:
                 case "visual":
                     """
-                        {"progress": "remaining"}
-                            will use the leds to show the time progression "remaining"
+                        /visual/ {"progress": "remaining"}
+                        only useful in combination with a timer of the same name - see below                        
+                        will use the leds to show the time progression "remaining"
                     """
                     if "progress" in params_json:
                         self.__my_pin_handler.leds_off()
@@ -154,7 +151,13 @@ class Agent:
                 case "play":
                     self.__my_audio_player.proc_play(params_json)
                 case "timers":
+                    """
+                        /timer/ {"remaining": 120}
+                        timer variables can be used on the LCD screen as 
+                        ${variables} with a autoformat like mm:ss or hh:mm:ss 
+                    """
                     if "_clearall" in params_json.keys():
+                        # removes all timers
                         self.__lcd.clear_timers()
                     else:
                         for key, value in params_json.items():

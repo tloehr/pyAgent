@@ -14,8 +14,8 @@ SECONDS_PER_CYCLE: float = 0.5
 CYCLES_PER_PAGE: int = 2
 
 AGVERSION: str = "1.0"
-AGBDATE: str = "2023-12-18"
-AGBUILD: str = "4"
+AGBDATE: str = "2023-12-19"
+AGBUILD: str = "5"
 
 
 class MyLCD(threading.Thread):
