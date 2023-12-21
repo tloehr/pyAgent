@@ -2,6 +2,7 @@ import threading
 import sys
 import time
 import json
+from pathlib import PurePath, Path
 from PinHandler.my_pin import MyPin
 from PinHandler.pin_scheme import PinScheme
 from context import Context
@@ -19,7 +20,12 @@ class PinHandler(threading.Thread):
         self.__pin_registry: [str, MyPin] = {}
         threading.Thread.__init__(self)
         self.__my_context = my_context
-        with open("scheme_macros.json") as my_file:
+        macros: Path
+        if Path("/opt/pyAgent/scheme_macros.json").exists():
+            macros = Path("/opt/pyAgent/scheme_macros.json")
+        else:
+            macros = Path(self.__my_context.WORKSPACE, "scheme_macros.json")
+        with open(macros) as my_file:
             self.SCHEME_MACROS = json.loads(my_file.read())
         self.__add("wht")
         self.__add("red")

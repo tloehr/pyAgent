@@ -1,5 +1,6 @@
 import sys
 from agent import Agent
+import atexit
 
 
 def main(args=None):
@@ -12,5 +13,10 @@ def main(args=None):
     Agent(args)
 
 
+# def exit_handler(signum, frame):
+#     print("Exiting...")
+
+
 if __name__ == "__main__":
+    # atexit.register(exit_handler)
     sys.exit(main(sys.argv))

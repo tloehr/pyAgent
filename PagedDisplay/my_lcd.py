@@ -14,8 +14,8 @@ SECONDS_PER_CYCLE: float = 0.5
 CYCLES_PER_PAGE: int = 2
 
 AGVERSION: str = "1.0"
-AGBDATE: str = "2023-12-19"
-AGBUILD: str = "5"
+AGBDATE: str = "2023-12-21"
+AGBUILD: str = "6"
 
 
 class MyLCD(threading.Thread):
@@ -48,6 +48,7 @@ class MyLCD(threading.Thread):
                 self.__my_context.log.error(f"LCD display couldn't be initialized: {ex}")
                 pass
         self.__init_class()
+        self.__variables["wifi"] = "--"
         self.start()
 
     # https://www.educba.com/python-event-handler/
@@ -69,7 +70,6 @@ class MyLCD(threading.Thread):
         if self.__use_lcd:
             self.__char_lcd.clear()
         self.__pages["page0"] = lcd_page.LCDPage("page0")
-        self.__variables["wifi"] = "--"
         self.__variables["ssid"] = "--"
         self.__variables["agversion"] = AGVERSION
         self.__variables["agbuild"] = AGBUILD

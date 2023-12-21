@@ -1,0 +1,19 @@
+# systemd service file to start the pyAgent as a service
+# create install file (within venv) with: pyinstaller --onefile  __main__.py
+# symlink this file into /lib/systemd/system
+# enable with: sudo systemctl enable pyAgent
+
+[Unit]
+Description=pyAgent
+After=network-online.target
+
+[Service]
+ExecStart=/opt/pyAgent/pyAgent /home/pi/.pyagent
+WorkingDirectory=/opt/pyAgent
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
