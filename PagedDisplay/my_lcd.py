@@ -1,4 +1,4 @@
-import threading
+from threading import Thread, Lock
 import time
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -14,14 +14,14 @@ SECONDS_PER_CYCLE: float = 0.5
 CYCLES_PER_PAGE: int = 2
 
 AGVERSION: str = "1.0"
-AGBDATE: str = "2023-12-21"
-AGBUILD: str = "6"
+AGBDATE: str = "2023-12-26"
+AGBUILD: str = "8"
 
 
-class MyLCD(threading.Thread):
+class MyLCD(Thread):
 
     def __init__(self, my_context: Context):
-        threading.Thread.__init__(self)
+        Thread.__init__(self)
         self.__use_lcd: bool = False
         """
             timers section
@@ -36,17 +36,19 @@ class MyLCD(threading.Thread):
         self.__page_index: int = 0
         self.__time_difference_since_last_cycle = 0
         self.__last_cycle_started_at = 0
-        self.__lock = threading.Lock()
+        self.__lock = Lock()
         self.__my_context = my_context
+        
         if is_raspberrypi():
             try:
-                self.__char_lcd = CharLCD('PCF8574',
-                                          int(self.__my_context.configs["hardware"]["lcd"]["PCF8574"], 16)
+                self.__char_lcd = CharLCD(self.__my_context.configs["hardware"]["lcd"]["i2c_expander"],
+                                          int(self.__my_context.configs["hardware"]["lcd"]["address"], 16)
                                           )
                 self.__use_lcd = True
             except Exception as ex:
                 self.__my_context.log.error(f"LCD display couldn't be initialized: {ex}")
-                pass
+                self.__use_lcd = False
+
         self.__init_class()
         self.__variables["wifi"] = "--"
         self.start()

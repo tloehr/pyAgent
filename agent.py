@@ -1,6 +1,7 @@
 import copy
 
 import context
+from Misc.rfid_handler import RfidHandler
 from PinHandler.pin_handler import PinHandler
 from PagedDisplay.my_lcd import MyLCD
 from Misc.status_job import StatusJob
@@ -11,7 +12,7 @@ import time
 import paho.mqtt.client as mqtt
 
 if is_raspberrypi():
-    from Misc import button_handler
+    from Misc import button_handler, rfid_handler
 
 # WORKSPACE = sys.args[1]
 NET_STATUS: [str, str] = {"led_all": "off", "wht": "netstatus"}
@@ -53,6 +54,8 @@ class Agent:
         self.__init_mqtt()
         if is_raspberrypi():
             button_handler.ButtonHandler(self.__mqtt_client, self.__my_context)
+            self.__rfid_handler = RfidHandler(self.__mqtt_client, self.__my_context)
+
         self.__my_audio_player: AudioPlayer = AudioPlayer(self.__my_context)
         self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context)  # start the status job
         self.__my_status_job.send_status()
@@ -101,7 +104,7 @@ class Agent:
                 self.__my_pin_handler.proc_pins(net_status)
                 self.__lcd.set_variable("wifi", f"{signal_quality}%")
                 time.sleep(2)
-                pass
+
         self.__my_context.MQTT_BROKER = mqtt_broker
         # self.__lcd.set_variable("broker", mqtt_broker)
         net_status: [str, str] = copy.deepcopy(NET_STATUS)
@@ -187,6 +190,15 @@ class Agent:
                     self.__lcd.proc_paged(params_json)
                 case "play":
                     self.__my_audio_player.proc_play(params_json)
+                case "rfid":
+                    """
+                        sets the mode how to handle rfid events
+                        {
+                            "mode": "revive_player" | "report_uid" | "reset_lives"
+                        }
+                    """
+                    if is_raspberrypi():
+                        self.__rfid_handler.proc_rfid(params_json)
                 case "timers":
                     """
                         /timer/ {"remaining": 120}
@@ -211,4 +223,3 @@ class Agent:
         except Exception as ex:
             message = "An exception of type {0} occurred. Arguments:\n{1!r}".format(type(ex).__name__, ex.args)
             self.__my_context.log.warning(f"oh shit: {message}")
-            pass

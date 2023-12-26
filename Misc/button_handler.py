@@ -1,6 +1,6 @@
 import json
 
-from context import Context, is_raspberrypi
+from context import Context
 from gpiozero import Button
 import paho.mqtt.client as mqtt
 

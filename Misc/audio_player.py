@@ -6,8 +6,8 @@ import random
 
 class AudioPlayer:
     def __init__(self, my_context: Context):
-        self.__process_map = {}
-        self.__my_context = my_context
+        self.__process_map: [str, Popen] = {}
+        self.__my_context: Context = my_context
 
     def proc_play(self, incoming):
         self.__play(channel=incoming["channel"], sub_path=incoming["subpath"], song=incoming["soundfile"])

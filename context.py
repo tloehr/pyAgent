@@ -57,6 +57,7 @@ class Context:
         self.MQTT_INBOUND: str = self.MQTT_ROOT_TOPIC + "/cmd/" + self.MY_ID + "/#"
         self.MQTT_STATUS_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["status"])
         self.MQTT_BUTTON_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["button"])
+        self.MQTT_RFID_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["rfid"])
         # check if the player bin really exists
         self.PLAYER_BIN: str = self.configs["player"]["bin"] if exists(self.configs["player"]["bin"]) else ""
         self.PLAYER_OPTS: str = self.configs["player"]["options"]
@@ -89,7 +90,7 @@ class Context:
     def __get_local_ip_address(self) -> str:
         ip: str = "0.0.0.0"
         if is_raspberrypi():
-            wifi_dev = json.loads(popen(f"nmcli device show {self.__WIFI_DEVICE} |jc --nmcli").read())
+            wifi_dev = json.loads(popen(f"nmcli device show {self.__WIFI_DEVICE}|jc --nmcli").read())
             if wifi_dev:
                 ip = wifi_dev[0]["ip4_address_1"]
         return ip
