@@ -16,7 +16,7 @@ HANDLER_MODE_REVIVAL: int = 0
 """
 agent is in MEDIC mode. respawn counter on cards are decreased. denied when counter is zero.
 """
-HANDLER_MODE_RESET_LIVES: int = 1
+HANDLER_MODE_INIT_PLAYER_TAGS: int = 1
 """
 agent is in RESPAWN mode. cards are reset to the max number of lives
 """
@@ -45,22 +45,29 @@ class RfidHandler(Thread):
             return
 
         # default is the report uid mode
-        self.__mode: int = HANDLER_MODE_REPORT_UID
-
-        self.__nfc = Pn532(Pn532I2c(self.__my_context.configs["hardware"]["rfid"]["pn532_i2c_bus"]))
+        self.__mode: int = HANDLER_MODE_INIT_PLAYER_TAGS
+        i2c_bus: int = self.__my_context.configs["hardware"]["rfid"]["pn532_i2c_bus"]
+        self.__nfc = Pn532(Pn532I2c(i2c_bus))
         self.__nfc.begin()
 
-        version_data: int = self.__nfc.getFirmwareVersion()
-        if not version_data:
+        try:
+            version_data: int = self.__nfc.getFirmwareVersion()
+            if not version_data:
+                self.__active = False
+                self.__my_context.log.warning("Didn't find a PN53x board")
+        except OSError as os_error:
             self.__active = False
-            self.__my_context.log.warning("Didn't find a PN53x board")
+            self.__my_context.log.error(os_error)
+
+        if not self.__active:
             return
 
-        self.__my_context.log.debug(
+        self.__my_context.log.info(
             f"Found chip PN5 {(version_data >> 24) & 0xFF} Firmware ver. {(version_data >> 16) & 0xFF}.{(version_data >> 8) & 0xFF}"
         )
         # Configures the SAM (Secure Access Module)
         self.__nfc.SAMConfig()
+        self.__max_revives: int = 0
         # start the thread
         self.start()
 
@@ -72,6 +79,7 @@ class RfidHandler(Thread):
             all_authenticated = all_authenticated and self.__nfc.mifareclassic_AuthenticateBlock(uid,
                                                                                                  block, 0,
                                                                                                  KEY_DEFAULT_KEYAB)
+            self.__my_context.log.debug(f"authentication for block {block} is {all_authenticated}")
             block = self.__next_block_number_mifare_card(block)
 
         if not all_authenticated:
@@ -101,6 +109,7 @@ class RfidHandler(Thread):
             (success, block_buffer) = self.__nfc.mifareclassic_ReadDataBlock(block)
             payload.append(int.from_bytes(block_buffer, "big"))
             block = self.__next_block_number_mifare_card(block)
+        return payload
 
     def run(self):
         # loop only runs, when the card reader is working and active
@@ -108,6 +117,10 @@ class RfidHandler(Thread):
             try:
                 card_detected, uid = self.__nfc.readPassiveTargetID(
                     cardbaudrate=pn532.PN532_MIFARE_ISO14443A_106KBPS)
+                if not card_detected:
+                    # self.__my_context.log.debug("No card detected")
+                    time.sleep(1)
+                    continue
                 if len(uid) != 4:
                     raise _RFIDException("this doesn't seem to be a Mifare Classic card")
 
@@ -115,17 +128,18 @@ class RfidHandler(Thread):
                     self.__report_uid(uid)
                 elif self.__mode == HANDLER_MODE_REVIVAL:
                     self.__revive_player(uid)
-                elif self.__mode == HANDLER_MODE_RESET_LIVES:
-                    self.__reset_lives(uid)
+                elif self.__mode == HANDLER_MODE_INIT_PLAYER_TAGS:
+                    self.__init_player_tag(uid)
 
+                time.sleep(2)
             except _RFIDException as exc:
                 self.__my_context.log.warning(exc)
-            time.sleep(1)
+                pass
 
     def __report_uid(self, uid):
-        self.__my_context.log.debug(f"reporting Card-UID: {binascii.hexlify(uid)}")
-        self.__report_event({"rfid": uid})
-        pass
+        uid_str: str = binascii.hexlify(uid, "-").decode()
+        self.__my_context.log.debug(f"reporting TAG: {uid_str}")
+        self.__report_event(event={"rfid": uid_str})
 
     def __report_event(self, event: {}):
         if not self.__mqtt_client.is_connected():
@@ -141,25 +155,34 @@ class RfidHandler(Thread):
         if revive_counter <= 0:
             self.__my_context.log.info("no more lives - go back to the spawn")
         else:
-            self.__my_context.log.info(f"player {uid} has {revive_counter - 1} lives left")
+            uid_str: str = binascii.hexlify(uid, "-").decode()
+            self.__my_context.log.info(f"player {uid_str} has {revive_counter - 1} lives left")
             self.__write_to_card(uid, STARTING_BLOCK_NUMBER + 1, [revive_counter - 1])
 
-    def __reset_lives(self, uid):
-        record_type, revive_counter, revive_max = self.__read_from_card(uid, STARTING_BLOCK_NUMBER, 3)
-        if record_type != RECORD_TYPE_REVIVE_COUNTER:
-            raise _RFIDException("no revive record - ignoring")
-        self.__write_to_card(uid, STARTING_BLOCK_NUMBER + 1, [revive_max])
+    def __init_player_tag(self, uid: bytearray):
+        """
+        formats the given card/tag to handle player tags. this means block 4,5,6 will contain the record_type,
+        a revive_counter and the maximum allowed revives before reinit
+        :param uid: of the card
+        :return:
+        """
+        uid_str:str = binascii.hexlify(uid, "-").decode()
+        self.__my_context.log.info(f"player tag is formatted {uid_str}: max_revives={self.__max_revives}")
+        self.__write_to_card(uid, STARTING_BLOCK_NUMBER,
+                             [RECORD_TYPE_REVIVE_COUNTER, self.__max_revives, self.__max_revives])
 
     def proc_rfid(self, incoming: json):
         if not self.__active:
             return
         self.__my_context.log.debug(incoming)
+        self.__max_revives = 0
         match incoming["mode"]:
             case "revive_player":
                 self.__mode = HANDLER_MODE_REVIVAL
-            case "report_uid":
+            case "report_tag":
                 self.__mode = HANDLER_MODE_REPORT_UID
-            case "reset_lives":
-                self.__mode = HANDLER_MODE_RESET_LIVES
+            case "init_player_tags":
+                self.__max_revives = incoming["max_revives"]
+                self.__mode = HANDLER_MODE_INIT_PLAYER_TAGS
             case _:
                 self.__my_context.log.warning("unknown rfid command")

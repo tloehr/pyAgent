@@ -14,8 +14,8 @@ SECONDS_PER_CYCLE: float = 0.5
 CYCLES_PER_PAGE: int = 2
 
 AGVERSION: str = "1.0"
-AGBDATE: str = "2023-12-26"
-AGBUILD: str = "8"
+AGBDATE: str = "2023-12-27"
+AGBUILD: str = "9"
 
 
 class MyLCD(Thread):
@@ -107,7 +107,6 @@ class MyLCD(Thread):
 
     def __add_page(self, key: str):
         if key in self.__pages:
-            self.__my_context.log.debug(f"re-using {key}")
             return
         self.__my_context.log.debug(f"adding page {key}")
         self.__pages[key] = lcd_page.LCDPage(key)
