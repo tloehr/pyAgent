@@ -13,10 +13,6 @@ COLS: int = 20
 SECONDS_PER_CYCLE: float = 0.5
 CYCLES_PER_PAGE: int = 2
 
-AGVERSION: str = "1.0"
-AGBDATE: str = "2023-12-27"
-AGBUILD: str = "9"
-
 
 class MyLCD(Thread):
 
@@ -31,27 +27,37 @@ class MyLCD(Thread):
         """
         self.__timer_listeners = []
         self.__timers = {}
-        self.__variables = {}
+        # self.__variaables = {}
         self.__pages = OrderedDict()
         self.__page_index: int = 0
         self.__time_difference_since_last_cycle = 0
         self.__last_cycle_started_at = 0
         self.__lock = Lock()
         self.__my_context = my_context
-        
+
         if is_raspberrypi():
             try:
                 self.__char_lcd = CharLCD(self.__my_context.configs["hardware"]["lcd"]["i2c_expander"],
                                           int(self.__my_context.configs["hardware"]["lcd"]["address"], 16)
                                           )
                 self.__use_lcd = True
+                self.__init_custom_wifi_chars()
             except Exception as ex:
                 self.__my_context.log.error(f"LCD display couldn't be initialized: {ex}")
                 self.__use_lcd = False
 
         self.__init_class()
-        self.__variables["wifi"] = "--"
+        self.__my_context.variables["wifi"] = "--"
         self.start()
+
+    def __init_custom_wifi_chars(self):
+        """
+        creating 5 chars to show the wi-fi signal strength in a common fashion
+        :return:
+        """
+        pass
+        # self.__char_lcd.create_char(0, )
+
 
     # https://www.educba.com/python-event-handler/
     def __iadd__(self, e_handler):
@@ -72,11 +78,7 @@ class MyLCD(Thread):
         if self.__use_lcd:
             self.__char_lcd.clear()
         self.__pages["page0"] = lcd_page.LCDPage("page0")
-        self.__variables["ssid"] = "--"
-        self.__variables["agversion"] = AGVERSION
-        self.__variables["agbuild"] = AGBUILD
-        self.__variables["agbdate"] = AGBDATE
-        self.__variables["agentname"] = self.__my_context.MY_ID
+        self.__my_context.variables["ssid"] = "--"
         self.__set_line("page0", 1, "pyAgent ${agversion}b${agbuild}")
         self.__set_line("page0", 2, "")
         self.__set_line("page0", 3, "")
@@ -149,7 +151,7 @@ class MyLCD(Thread):
         # and notify listeners if necessary
         for key, value in self.__timers.items():
             if value[1] - self.__time_difference_since_last_cycle < 0:
-                self.__variables[key] = "--"
+                self.__my_context.variables[key] = "--"
                 self.__notify_listeners(key_name=key, old_value=value[0], new_value=0)
 
         # remove all timers that are zero and below
@@ -170,13 +172,9 @@ class MyLCD(Thread):
             pattern = "%M:%S" if value[1] < 3600000 else "%H:%M:%S"
             new_time_value = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
                 milliseconds=value[1])
-            self.set_variable(key, new_time_value.strftime(pattern))
+            self.__my_context.variables[key] = new_time_value.strftime(pattern)
             # this event will be sent out to realize a Progress Bar via the LEDs.
             self.__notify_listeners(key_name=key, old_value=value[0], new_value=value[1])
-
-    def set_variable(self, key: str, var: str):
-        self.__my_context.log.trace(f"setting variable {key} to {var}")
-        self.__variables[key] = var
 
     def set_timer(self, key: str, time_in_secs: int):
         self.__my_context.log.trace(f"setting timer {key} to {time_in_secs}")
@@ -188,12 +186,12 @@ class MyLCD(Thread):
 
     def clear_timers(self):
         for key in self.__timers.keys():
-            self.__variables[key] = "--"
+            self.__my_context.variables[key] = "--"
         self.__timers.clear()
 
     def __replace_variables(self, line: str) -> str:
         text = line
-        for key, value in self.__variables.items():
+        for key, value in self.__my_context.variables.items():
             # log.debug(f"before {text}")
             # log.debug(f"replacing ${{{key}}} with {value}")
             text = text.replace(f"${{{key}}}", str(value))

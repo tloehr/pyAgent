@@ -4,10 +4,11 @@ import re
 import coloredlogs
 from pathlib import PurePath
 from os.path import exists
-from os import popen
+from os import popen, path
 import json
 import logging
 import io
+import sys
 
 TRACE = 5
 
@@ -42,12 +43,14 @@ class Context:
     def __init__(self, workspace: str):
         with open(PurePath(workspace, "config.json")) as my_config_file:
             self.configs = json.load(my_config_file)
+        self.variables: [str, str] = {}
 
         self.__WIFI_DEVICE: str = self.configs["network"]["device"]
         self.IPADDRESS = self.__get_local_ip_address()
         self.num_of_reconnects: int = 0
         self.WORKSPACE = workspace
         self.MY_ID: str = self.configs["my_id"]
+        self.variables["agentname"] = self.MY_ID
         self.LOW_TRIGGER: [str] = self.configs["hardware"]["triggered_on_low"]
         self.mqtt_broker: str = ""
         self.LOG_LEVEL: str = str(self.configs["loglevel"]).upper()
@@ -61,28 +64,31 @@ class Context:
         # check if the player bin really exists
         self.PLAYER_BIN: str = self.configs["player"]["bin"] if exists(self.configs["player"]["bin"]) else ""
         self.PLAYER_OPTS: str = self.configs["player"]["options"]
-
+        # LOGGER SETUP
         logging.basicConfig()
         logging.addLevelName(TRACE, "TRACE")
-
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
         fh = logging.FileHandler(PurePath(workspace, "agent.log"))
         fh.setLevel(self.configs["loglevel"])
         fh.setFormatter(formatter)
-
-        # ch = logging.StreamHandler()
-        # ch.setLevel(self.configs["loglevel"])
-        # ch.setFormatter(formatter)
-
         self.log = logging.getLogger("mylogger")
         self.log.addHandler(fh)
-        # self.log.addHandler(ch)
-
-        # logging.root.setLevel(logging.NOTSET)
-        # logging.root.setLevel(level=logging.getLevelName(self.configs["loglevel"]))
         logging.Logger.trace = trace
         coloredlogs.install(level=logging.getLevelName(self.configs["loglevel"]))
+
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            print('running in a PyInstaller bundle')
+        else:
+            print('running in a normal Python process')
+
+        #
+        path_to_version: str = path.abspath(path.join(path.dirname(__file__), "version.json"))
+        with open(path_to_version) as my_version:
+            version: json = json.load(my_version)
+            self.variables["agversion"] = version["version"]
+            self.variables["agdate"] = version["timestamp"]
+            self.variables["agbuild"] = version["buildnumber"]
+            self.log.info(f"pyAgent v{version['version']} b{version['buildnumber']}-{version['timestamp']}")
 
     def reset_stats(self):
         self.num_of_reconnects = 0
@@ -91,22 +97,28 @@ class Context:
         ip: str = "0.0.0.0"
         if is_raspberrypi():
             wifi_dev = json.loads(popen(f"nmcli device show {self.__WIFI_DEVICE}|jc --nmcli").read())
-            if wifi_dev:
+            if wifi_dev and "ip4_address_1" in wifi_dev[0]:
                 ip = wifi_dev[0]["ip4_address_1"]
         return ip
 
+    # def set_variable(self, key: str, var: str):
+    #     self.log.trace(f"setting variable {key} to {var}")
+    #     self.__variables[key] = var
 
-def get_current_wifi_signal_strength() -> (int, str, str):
-    if not is_raspberrypi():
-        return 100, "00:00:00:00:00:00", "ssid"
-    signal = 0
-    mac = "00:00:00:00:00:00"
-    ssid = "NO_WIFI"
-    wifi_devices = json.loads(popen("nmcli device wifi|jc --nmcli").read())
-    for ap in wifi_devices:
-        if ap["in_use"] == "*":
-            mac = ap["bssid"]
-            signal = ap["signal"]
-            ssid = ap["ssid"]
-            continue
-    return signal, mac, ssid
+    def get_current_wifi_signal_strength(self) -> (int, str, str):
+        if not is_raspberrypi():
+            return 100, "00:00:00:00:00:00", "ssid"
+        signal = 0
+        mac = "00:00:00:00:00:00"
+        ssid = "NO_WIFI"
+
+        # awk workaround for jc to work with nmcli device wifi
+        nmcli: str = popen("nmcli -f ACTIVE,SSID,BSSID,SIGNAL device wifi|awk '{if($1 ~ /^yes/) print}'").read()
+        if nmcli:
+            mac = nmcli.split()[1]
+            ssid = nmcli.split()[2]
+            signal = int(nmcli.split()[3])
+
+        self.log.debug(f"Current wifi signal strength: {signal}%")
+
+        return signal, mac, ssid

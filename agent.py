@@ -7,12 +7,11 @@ from PagedDisplay.my_lcd import MyLCD
 from Misc.status_job import StatusJob
 from Misc.audio_player import AudioPlayer
 import json
+from uuid import uuid4
 from context import Context, is_raspberrypi
 import time
 import paho.mqtt.client as mqtt
 
-# WORKSPACE = sys.args[1]
-NET_STATUS: [str, str] = {"led_all": "off", "wht": "netstatus"}
 # PROGRESS_SCHEMES: [str] = ["", "normal", "normal", "fast", "very_fast", "mega_fast", "mega_fast"]
 PROGRESS_ESCALATION = [
     [["wht"], "normal"],
@@ -37,14 +36,19 @@ class Agent:
 
     def __init__(self, args):
         self.__mqtt_client: mqtt.Client = None
+        self.__prev_signal_quality: int = -1
         # contains the timer name when progress runs - empty otherwise
         self.__progress_bar: str = ""
         self.__previous_step: int = -1
+        # we keep track on our own because of this
+        # https://github.com/eclipse/paho.mqtt.python/issues/525
+        self.__connected: bool = False
         self.WORKSPACE = args[1]
         self.__my_context: Context = Context(self.WORKSPACE)
         self.__my_pin_handler = PinHandler(self.__my_context)
         self.__lcd = MyLCD(self.__my_context)
-        self.__lcd.set_variable("ip", self.__my_context.IPADDRESS)
+        self.__my_context.variables["ip"] = self.__my_context.IPADDRESS
+        self.__my_context.variables["broker"] = "-none-"
         # for the progress bar function
         self.__lcd += self.__on_timer_changed
         self.__my_audio_player: AudioPlayer = AudioPlayer(self.__my_context)
@@ -57,24 +61,24 @@ class Agent:
             self.__rfid_handler = RfidHandler(self.__mqtt_client, self.__my_context)
 
         self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context)  # start the status job
-        self.__my_status_job.send_status()
 
     def __init_mqtt(self):
         # Searching for a valid MQTT broker. Several addresses can be specified in the ~/.pyagent/config.json file
         # the agent will try them out until can establish a connection
         # then this broker will be kept
-        current_broker: int = 0
-        mqtt_broker: str = ""
-        self.__mqtt_client = mqtt.Client()
+        self.__mqtt_client = mqtt.Client(clean_session=self.__my_context.configs["network"]["mqtt"]["clean_session"],
+                                         client_id=self.__my_context.MY_ID + str(uuid4()))
         self.__mqtt_client.max_inflight_messages_set(self.__my_context.configs["network"]["mqtt"]["max_inflight"])
-        self.__mqtt_client._clean_session = self.__my_context.configs["network"]["mqtt"]["clean_session"]
 
-        self.__my_context.mqtt_broker = self.__search_for_broker()
+        self.__mqtt_client.on_connect = self.on_connect
+        self.__mqtt_client.on_message = self.on_message
+        self.__mqtt_client.on_disconnect = self.on_disconnect
+
+        self.__search_for_broker()
 
         # self.__lcd.set_variable("broker", mqtt_broker)
         if not self.__received_first_message_already:
-            net_status: [str, str] = copy.deepcopy(NET_STATUS)
-            net_status["blu"] = "netstatus"
+            net_status: [str, str] = {"wht": "netstatus", "blu": "netstatus"}
             self.__my_pin_handler.proc_pins(net_status)
         self.__post_init_page()
 
@@ -95,7 +99,8 @@ class Agent:
         ]})
 
     def on_connect(self, client, userdata, flags, rc):
-        self.__my_context.log.info("Connected with result code " + str(rc))
+        self.__connected = True
+        self.__my_context.log.info("Connected to mqtt broker")
         self.__my_context.num_of_reconnects += 1
         self.__mqtt_client.subscribe(self.__my_context.MQTT_INBOUND)
 
@@ -124,8 +129,17 @@ class Agent:
         self.__my_pin_handler.proc_pins(my_scheme)
 
     def on_disconnect(self, my_client, userdata, msg):
+        self.__connected = False
         self.__my_context.log.info("disconnected")
-        self.__search_for_broker()
+        while not self.__connected:
+            time.sleep(2)
+            try:
+                self.__my_context.log.debug("trying to reconnect")
+                self.__mqtt_client.reconnect()
+                self.__connected = True
+            except OSError as ose:
+                self.__connected = False
+                self.__my_context.log.debug(f"error while trying to reconnect - {ose}")
 
     def on_message(self, my_client, userdata, msg):
         # "normal", "normal", "fast", "fast", "very_fast"
@@ -178,7 +192,7 @@ class Agent:
                             self.__lcd.set_timer(key, value)
                 case "vars":
                     for key, value in params_json.items():
-                        self.__lcd.set_variable(key, value)
+                        self.__my_context.variables[key] = value
                 case "reset_status":
                     self.__my_context.reset_stats()
                 case "status":
@@ -193,41 +207,52 @@ class Agent:
         self.__pre_init_page()
         trying_broker_with_index: int = 0
         mqtt_broker: str = ""
-        while not self.__mqtt_client.is_connected():
+        while not self.__connected:
+            time.sleep(2)
             # if the context has a broker already, then we must be reconnecting. No need to try out all brokers again
             mqtt_broker = self.__my_context.mqtt_broker if self.__my_context.mqtt_broker \
                 else self.__my_context.configs["network"]["mqtt"]["broker"][trying_broker_with_index]
-            # if self.__my_context.mqtt_broker
-            # mqtt_broker = self.__my_context.configs["network"]["mqtt"]["broker"][current_broker]
+
+            self.__render_signal_qualtiy(self.__my_context.get_current_wifi_signal_strength()[0])
             try:
                 self.__my_context.log.info(f"trying broker: '{mqtt_broker}'")
-                self.__lcd.set_variable("broker", mqtt_broker)
-                self.__mqtt_client.on_connect = self.on_connect
-                self.__mqtt_client.on_message = self.on_message
-                self.__mqtt_client.on_disconnect = self.on_disconnect
-                self.__mqtt_client.connect(mqtt_broker, self.__my_context.MQTT_PORT)
+                self.__my_context.variables["broker"] = mqtt_broker
+                self.__mqtt_client.connect(mqtt_broker, port=self.__my_context.MQTT_PORT,
+                                           keepalive=self.__my_context.configs["network"]["mqtt"]["keepalive"])
                 self.__mqtt_client.loop_start()
-                time.sleep(2)
             except OSError as os_ex:
                 trying_broker_with_index += 1
                 if trying_broker_with_index >= len(self.__my_context.configs["network"]["mqtt"]["broker"]):
                     trying_broker_with_index = 0
-                self.__my_context.log.info("couldn't connect to mqtt - trying next one")
+                self.__my_context.log.info(f"couldn't connect- retrying broker {os_ex}")
+            except Exception as e:
+                self.__my_context.log.error(f"search_for_broker exception{e}")
 
-                # show current WI-FI signal strength on the led bar
-                net_status: [str, str] = copy.deepcopy(NET_STATUS)
-                wifi_info: (int, str, str) = context.get_current_wifi_signal_strength()
-                signal_quality = wifi_info[0]
-                if signal_quality >= 20:
-                    net_status["red"] = "netstatus"
-                if signal_quality >= 40:
-                    net_status["ylw"] = "netstatus"
-                if signal_quality >= 60:
-                    net_status["grn"] = "netstatus"
-                if signal_quality >= 80:
-                    net_status["blu"] = "netstatus"
-                self.__my_pin_handler.proc_pins(net_status)
-                self.__lcd.set_variable("wifi", f"{signal_quality}%")
-                time.sleep(2)
+        self.__my_context.mqtt_broker = mqtt_broker
 
-        return mqtt_broker
+    def __render_signal_qualtiy(self, signal_quality: int):
+        """
+        show current WI-FI signal strength on the led bar
+        :param signal_quality: signal quality in percent
+        :return: NOTHING
+        """
+        # shortcut
+        if signal_quality == self.__prev_signal_quality:
+            return
+        self.__prev_signal_quality = signal_quality
+        # render
+        net_status: [str, str] = {"led_all": "off"}
+        if signal_quality == 0:
+            net_status["wht"] = "no_wifi"
+        if signal_quality > 0:
+            net_status["wht"] = "signal_strength"
+        if signal_quality >= 20:
+            net_status["red"] = "signal_strength"
+        if signal_quality >= 40:
+            net_status["ylw"] = "signal_strength"
+        if signal_quality >= 60:
+            net_status["grn"] = "signal_strength"
+        if signal_quality >= 80:
+            net_status["blu"] = "signal_strength"
+        self.__my_pin_handler.proc_pins(net_status)
+        self.__my_context.variables["wifi"] = f"{signal_quality}%"

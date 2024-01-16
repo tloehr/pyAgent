@@ -15,6 +15,9 @@ class AudioPlayer:
     def __play(self, channel: str, sub_path: str, song: str):
         if not self.__my_context.PLAYER_BIN:
             return
+        if not channel:
+            self.__stop_all()
+            return
         if song == "<random>":
             song = self.__pick_random_file(sub_path)
         audiofile = self.__get_audio_file(sub_path, song)
@@ -30,6 +33,11 @@ class AudioPlayer:
     def __stop(self, channel: str):
         if channel in self.__process_map:
             self.__process_map[channel].kill()
+
+    def __stop_all(self):
+        for channel, process in self.__process_map.items():
+            process.kill()
+        self.__process_map.clear()
 
     def __pick_random_file(self, sub_path: str) -> str:
         list_of_files: [str] = []

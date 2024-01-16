@@ -1,3 +1,5 @@
+import logging
+
 from context import Context
 import binascii
 import json
@@ -47,10 +49,11 @@ class RfidHandler(Thread):
         # default is the report uid mode
         self.__mode: int = HANDLER_MODE_INIT_PLAYER_TAGS
         i2c_bus: int = self.__my_context.configs["hardware"]["rfid"]["pn532_i2c_bus"]
-        self.__nfc = Pn532(Pn532I2c(i2c_bus))
-        self.__nfc.begin()
 
         try:
+            self.__nfc = Pn532(Pn532I2c(i2c_bus))
+            self.__nfc.begin()
+
             version_data: int = self.__nfc.getFirmwareVersion()
             if not version_data:
                 self.__active = False
@@ -65,9 +68,9 @@ class RfidHandler(Thread):
         self.__my_context.log.info(
             f"Found chip PN5 {(version_data >> 24) & 0xFF} Firmware ver. {(version_data >> 16) & 0xFF}.{(version_data >> 8) & 0xFF}"
         )
-        # Configures the SAM (Secure Access Module)
         self.__nfc.SAMConfig()
-        self.__max_revives: int = 0
+        self.__max_revives_per_player: int = 0
+        self.__remaining_revives_per_agent: int = 0
         # start the thread
         self.start()
 
@@ -139,7 +142,7 @@ class RfidHandler(Thread):
     def __report_uid(self, uid):
         uid_str: str = binascii.hexlify(uid, "-").decode()
         self.__my_context.log.debug(f"reporting TAG: {uid_str}")
-        self.__report_event(event={"rfid": uid_str})
+        self.__report_event(event={"uid": uid_str})
 
     def __report_event(self, event: {}):
         if not self.__mqtt_client.is_connected():
@@ -148,16 +151,22 @@ class RfidHandler(Thread):
                                    self.__my_context.MQTT_RFID_QOS, True)
 
     def __revive_player(self, uid):
+        if self.__remaining_revives_per_agent <= 0:
+            self.__my_context.log.info("this medi can't revive anymore")
+            return
+
         record_type, revive_counter, revive_max = self.__read_from_card(uid, STARTING_BLOCK_NUMBER, 3)
         if record_type != RECORD_TYPE_REVIVE_COUNTER:
             raise _RFIDException("no revive record - ignoring")
 
         if revive_counter <= 0:
             self.__my_context.log.info("no more lives - go back to the spawn")
-        else:
-            uid_str: str = binascii.hexlify(uid, "-").decode()
-            self.__my_context.log.info(f"player {uid_str} has {revive_counter - 1} lives left")
-            self.__write_to_card(uid, STARTING_BLOCK_NUMBER + 1, [revive_counter - 1])
+            return
+
+        uid_str: str = binascii.hexlify(uid, "-").decode()
+        self.__my_context.log.info(f"player {uid_str} has {revive_counter - 1} lives left")
+        self.__write_to_card(uid, STARTING_BLOCK_NUMBER + 1, [revive_counter - 1])
+        self.__remaining_revives_per_agent -= 1
 
     def __init_player_tag(self, uid: bytearray):
         """
@@ -166,23 +175,26 @@ class RfidHandler(Thread):
         :param uid: of the card
         :return:
         """
-        uid_str:str = binascii.hexlify(uid, "-").decode()
-        self.__my_context.log.info(f"player tag is formatted {uid_str}: max_revives={self.__max_revives}")
+        uid_str: str = binascii.hexlify(uid, "-").decode()
+        self.__my_context.log.info(
+            f"player tag is formatted {uid_str}: max_revives_per_player={self.__max_revives_per_player}")
         self.__write_to_card(uid, STARTING_BLOCK_NUMBER,
-                             [RECORD_TYPE_REVIVE_COUNTER, self.__max_revives, self.__max_revives])
+                             [RECORD_TYPE_REVIVE_COUNTER, self.__max_revives_per_player, self.__max_revives_per_player])
 
     def proc_rfid(self, incoming: json):
         if not self.__active:
             return
-        self.__my_context.log.debug(incoming)
-        self.__max_revives = 0
+        self.__my_context.log.trace(incoming)
+        self.__max_revives_per_player = 0
+        self.__remaining_revives_per_agent = 0
         match incoming["mode"]:
             case "revive_player":
                 self.__mode = HANDLER_MODE_REVIVAL
+                self.__remaining_revives_per_agent = incoming["remaining_revives_per_agent"]
             case "report_tag":
                 self.__mode = HANDLER_MODE_REPORT_UID
             case "init_player_tags":
-                self.__max_revives = incoming["max_revives"]
+                self.__max_revives_per_player = incoming["max_revives_per_player"]
                 self.__mode = HANDLER_MODE_INIT_PLAYER_TAGS
             case _:
                 self.__my_context.log.warning("unknown rfid command")
