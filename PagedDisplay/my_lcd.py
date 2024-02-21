@@ -1,6 +1,5 @@
 from threading import Thread, Lock
 import time
-from datetime import datetime, timedelta
 from collections import OrderedDict
 from PagedDisplay import lcd_page
 from context import Context, is_raspberrypi
@@ -11,7 +10,74 @@ if is_raspberrypi():
 ROWS: int = 4
 COLS: int = 20
 SECONDS_PER_CYCLE: float = 0.5
-CYCLES_PER_PAGE: int = 2
+CYCLES_PER_PAGE: int = 4
+
+# https://rplcd.readthedocs.io/en/stable/usage.html#creating-custom-characters
+LCD_ANTENNA = (
+    0b11111,
+    0b10001,
+    0b01010,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b00000
+)
+
+WIFI_POOR = (
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b10000,
+    0b00000
+)
+
+WIFI_FAIR = (
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b01000,
+    0b11000,
+    0b00000
+)
+
+WIFI_GOOD = (
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00100,
+    0b01100,
+    0b11100,
+    0b00000
+)
+
+WIFI_VERY_GOOD = (
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00010,
+    0b00110,
+    0b01110,
+    0b11110,
+    0b00000
+)
+
+WIFI_PERFECT = (
+    0b00000,
+    0b00000,
+    0b00001,
+    0b00011,
+    0b00111,
+    0b01111,
+    0b11111,
+    0b00000
+)
 
 
 class MyLCD(Thread):
@@ -19,21 +85,12 @@ class MyLCD(Thread):
     def __init__(self, my_context: Context):
         Thread.__init__(self)
         self.__use_lcd: bool = False
-        """
-            timers section
-            it may seem odd, but for the agent all timers are just
-            something that will show up on the display
-            so we maintain them here
-        """
-        self.__timer_listeners = []
-        self.__timers = {}
-        # self.__variaables = {}
         self.__pages = OrderedDict()
         self.__page_index: int = 0
-        self.__time_difference_since_last_cycle = 0
-        self.__last_cycle_started_at = 0
+        self.__last_cycle_started_at: float = 0
         self.__lock = Lock()
         self.__my_context = my_context
+        self.__my_context.set_wifi_vars(signal_quality=0)
 
         if is_raspberrypi():
             try:
@@ -47,34 +104,25 @@ class MyLCD(Thread):
                 self.__use_lcd = False
 
         self.__init_class()
-        self.__my_context.variables["wifi"] = "--"
         self.start()
 
     def __init_custom_wifi_chars(self):
         """
         creating 5 chars to show the wi-fi signal strength in a common fashion
+        creating 1 Antenna Symbol
         :return:
         """
-        pass
-        # self.__char_lcd.create_char(0, )
-
-
-    # https://www.educba.com/python-event-handler/
-    def __iadd__(self, e_handler):
-        self.__timer_listeners.append(e_handler)
-        return self
-
-    def __isub__(self, e_handler):
-        self.__timer_listeners.remove(e_handler)
-        return self
-
-    def __notify_listeners(self, key_name=None, old_value=None, new_value=None):
-        for listener in self.__timer_listeners:
-            listener(key_name=key_name, old_value=old_value, new_value=new_value)
+        self.__char_lcd.create_char(0, LCD_ANTENNA)
+        self.__char_lcd.create_char(1, WIFI_POOR)
+        self.__char_lcd.create_char(2, WIFI_FAIR)
+        self.__char_lcd.create_char(3, WIFI_GOOD)
+        self.__char_lcd.create_char(4, WIFI_VERY_GOOD)
+        self.__char_lcd.create_char(5, WIFI_PERFECT)
 
     def __init_class(self):
         self.__loop_counter = 0
         self.__pages.clear()
+        self.__page_index = 0
         if self.__use_lcd:
             self.__char_lcd.clear()
         self.__pages["page0"] = lcd_page.LCDPage("page0")
@@ -82,30 +130,36 @@ class MyLCD(Thread):
         self.__set_line("page0", 1, "pyAgent ${agversion}b${agbuild}")
         self.__set_line("page0", 2, "")
         self.__set_line("page0", 3, "")
-        self.__set_line("page0", 4, "Initializing...")
+        self.__set_line("page0", 4, "Initializing...   ${wifi_signal}")
 
     def run(self):
         self.__my_context.log.trace("LCD Loop starting... ")
         while True:
             self.__lock.acquire()
-            self.__calculate_timers()
+            now: float = time.time_ns() / 1000000
+            self.__my_context.calculate_timers(self.__last_cycle_started_at, now)
+            self.__last_cycle_started_at = now
             if self.__loop_counter % CYCLES_PER_PAGE == 0:
                 self.__next_page()  # if necessary
-                self.__display_active_page()
+            self.__display_active_page()
             self.__lock.release()
             time.sleep(SECONDS_PER_CYCLE)
             self.__loop_counter += 1
 
     def proc_paged(self, json):
         self.__lock.acquire()
-        self.__init_class()
-        for page, lines in json.items():
-            self.__my_context.log.debug(f"paged: {page}, {lines}")
-            num = 1
-            for line in lines:
-                self.__set_line(page, num, line)
-                num += 1
-        self.__lock.release()
+        try:
+            self.__init_class()
+            for page, lines in json.items():
+                self.__my_context.log.debug(f"paged: {page}, {lines}")
+                num = 1
+                for line in lines:
+                    self.__set_line(page, num, line)
+                    num += 1
+        except Exception as ex:
+            self.__my_context.log.error(f"error parsing scheme: {ex}")
+        finally:
+            self.__lock.release()
 
     def __add_page(self, key: str):
         if key in self.__pages:
@@ -133,7 +187,7 @@ class MyLCD(Thread):
         for row in range(ROWS):
             line = self.__pages[active_page_key].get_line(row)
             if line:
-                line = self.__replace_variables(line)[:COLS]
+                line = self.__my_context.replace_variables(line)[:COLS]
             line = line.ljust(COLS, " ")
             if self.__use_lcd:
                 self.__char_lcd.cursor_pos = (row, 0)
@@ -142,58 +196,3 @@ class MyLCD(Thread):
             # prevent unnecessary refreshes
             #
             self.__my_context.log.trace(f"VISIBLE PAGE #{self.__page_index} Line {row}: '{line}'")
-
-    def __calculate_timers(self):
-        now = time.time_ns() / 1000000
-        self.__time_difference_since_last_cycle = now - self.__last_cycle_started_at
-        self.__last_cycle_started_at = now
-        # fix variables for empty timers
-        # and notify listeners if necessary
-        for key, value in self.__timers.items():
-            if value[1] - self.__time_difference_since_last_cycle < 0:
-                self.__my_context.variables[key] = "--"
-                self.__notify_listeners(key_name=key, old_value=value[0], new_value=0)
-
-        # remove all timers that are zero and below
-        # OR keep all the others to be precise
-        # that's the reason for the >=0 in the comprehension
-        self.__timers = {
-            k: v for k, v in self.__timers.items()
-            if v[1] - self.__time_difference_since_last_cycle >= 0
-        }
-        # recalculate all timers
-        self.__timers = {
-            k: [v[0], v[1] - self.__time_difference_since_last_cycle]
-            for k, v in self.__timers.items()
-        }
-        # re-set all variables
-        for key, value in self.__timers.items():
-            self.__my_context.log.trace(f"time {key} is now {value[1]}")
-            pattern = "%M:%S" if value[1] < 3600000 else "%H:%M:%S"
-            new_time_value = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
-                milliseconds=value[1])
-            self.__my_context.variables[key] = new_time_value.strftime(pattern)
-            # this event will be sent out to realize a Progress Bar via the LEDs.
-            self.__notify_listeners(key_name=key, old_value=value[0], new_value=value[1])
-
-    def set_timer(self, key: str, time_in_secs: int):
-        self.__my_context.log.trace(f"setting timer {key} to {time_in_secs}")
-        # we have to add one second here so the display fits to the timer notion of the players.
-        initial_value = (time_in_secs + 1) * 1000
-        # left Long = starting value -> never changes
-        # right Long = decreasing value ends with 0
-        self.__timers[key] = [initial_value, initial_value]
-
-    def clear_timers(self):
-        for key in self.__timers.keys():
-            self.__my_context.variables[key] = "--"
-        self.__timers.clear()
-
-    def __replace_variables(self, line: str) -> str:
-        text = line
-        for key, value in self.__my_context.variables.items():
-            # log.debug(f"before {text}")
-            # log.debug(f"replacing ${{{key}}} with {value}")
-            text = text.replace(f"${{{key}}}", str(value))
-        # log.debug(f"after {text}")
-        return text

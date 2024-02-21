@@ -72,38 +72,42 @@ class PinHandler(threading.Thread):
 
     def proc_pins(self, incoming: json):
         self.__lock.acquire()
-        self.__my_context.log.debug(f"incoming json{json.dumps(incoming)}")
-        # Preprocess sir_all and led_all device selectors
-        # off is processed first, and then removed from the message
-        # other schemes are duplicated to their devices names.
-        if "sir_all" in incoming:
-            if str(incoming["sir_all"]).lower() == "off":
-                for pin in ALL_SIRENS:
-                    self.off(pin)
-            else:
-                for pin in ALL_SIRENS:
-                    incoming[pin] = incoming["sir_all"]
-            del incoming["sir_all"]
-        #
-        if "led_all" in incoming:
-            if str(incoming["led_all"]).lower() == "off":
-                for pin in ALL_LEDS:
-                    self.off(pin)
-            else:
-                for pin in ALL_LEDS:
-                    incoming[pin] = incoming["led_all"]
-            del incoming["led_all"]
-        #
-        for key, value in incoming.items():
-            self.__my_context.log.debug(f"found key: {key}")
-            if str(value).lower() == "off":
-                self.off(key)
-                return
-            if str(value).lower() in self.SCHEME_MACROS:
-                json_scheme = self.SCHEME_MACROS[value]
-            else:
-                json_scheme = value
-            repeat = sys.maxsize if json_scheme["repeat"] < 0 else json_scheme["repeat"] - 1
-            self.__pin_registry[key].init(repeat, json_scheme["scheme"])
-        #
-        self.__lock.release()
+        try:
+            self.__my_context.log.debug(f"incoming json{json.dumps(incoming)}")
+            # Preprocess sir_all and led_all device selectors
+            # off is processed first, and then removed from the message
+            # other schemes are duplicated to their devices names.
+            if "sir_all" in incoming:
+                if str(incoming["sir_all"]).lower() == "off":
+                    for pin in ALL_SIRENS:
+                        self.off(pin)
+                else:
+                    for pin in ALL_SIRENS:
+                        incoming[pin] = incoming["sir_all"]
+                del incoming["sir_all"]
+            #
+            if "led_all" in incoming:
+                if str(incoming["led_all"]).lower() == "off":
+                    for pin in ALL_LEDS:
+                        self.off(pin)
+                else:
+                    for pin in ALL_LEDS:
+                        incoming[pin] = incoming["led_all"]
+                del incoming["led_all"]
+            #
+            for key, value in incoming.items():
+                self.__my_context.log.debug(f"found key: {key}")
+                if str(value).lower() == "off":
+                    self.off(key)
+                    continue
+                if str(value).lower() in self.SCHEME_MACROS:
+                    json_scheme = self.SCHEME_MACROS[value]
+                else:
+                    json_scheme = value
+
+                repeat = sys.maxsize if json_scheme["repeat"] < 0 else json_scheme["repeat"] - 1
+                self.__pin_registry[key].init(repeat, json_scheme["scheme"])
+        except Exception as ex:
+            self.__my_context.log.error(f"error parsing scheme: {ex}")
+        finally:
+            self.__lock.release()

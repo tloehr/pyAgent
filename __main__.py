@@ -2,7 +2,6 @@ import json
 import sys
 from datetime import datetime
 from pathlib import PurePath
-from os.path import exists
 from agent import Agent
 
 
@@ -18,9 +17,6 @@ def main(args=None):
     Agent(args)
 
 
-# def exit_handler(signum, frame):
-#     print("Exiting...")
-
 def buildnumber():
     """
     increases buildnumber and sets timestamp for version file
@@ -31,7 +27,7 @@ def buildnumber():
     with open(PurePath("version.json")) as read_version:
         version = json.load(read_version)
         version["buildnumber"] += 1
-        version["timestamp"] = datetime.now().strftime("%Y%d%m-%H%M%S")
+        version["timestamp"] = datetime.now().strftime("%y%m%d-%H%M")
     with open(PurePath("version.json"), "w") as write_version:
         write_version.write(json.dumps(version, indent=4))
 

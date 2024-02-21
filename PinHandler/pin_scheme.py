@@ -41,7 +41,8 @@ class PinScheme:
         if self.__pointer >= len(self.__scheme):
             self.__pointer = 0
             if self.__repeat:
-                self.__my_context.log.trace(f"list is empty - refilling for repeat {self.__repeat} ")
+                self.__my_context.log.trace(f"reached end of scheme list - repeat #{self.__repeat} ")
                 self.__repeat -= 1
             else:
+                self.__my_context.log.trace(f"reached end of scheme list - no more repeats - done")
                 self.clear()

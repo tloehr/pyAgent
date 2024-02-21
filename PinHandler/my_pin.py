@@ -19,6 +19,7 @@ class MyPin:
         self.__prev_value = -1
         gpio: str = self.__my_context.configs["hardware"][self.name]
         self.__my_context.log.trace(f"trying {name} at hw pin {gpio}")
+        # pin numbering see: https://gpiozero.readthedocs.io/en/stable/recipes.html#pin-numbering
         self.__pin: LED = LED(gpio)
         self.__pin.value = self.__correct_value(0)
 

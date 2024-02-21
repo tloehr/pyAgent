@@ -1,6 +1,6 @@
-import copy
+import signal
+import sys
 
-import context
 from Misc.rfid_handler import RfidHandler
 from PinHandler.pin_handler import PinHandler
 from PagedDisplay.my_lcd import MyLCD
@@ -50,17 +50,33 @@ class Agent:
         self.__my_context.variables["ip"] = self.__my_context.IPADDRESS
         self.__my_context.variables["broker"] = "-none-"
         # for the progress bar function
-        self.__lcd += self.__on_timer_changed
+        self.__my_context += self.__on_timer_changed
         self.__my_audio_player: AudioPlayer = AudioPlayer(self.__my_context)
-
-        self.__received_first_message_already = False
+        self.__received_first_visual_led_msg_already = False
+        self.__received_first_paged_msg_already = False
         self.__init_mqtt()
         if is_raspberrypi():
             from Misc import button_handler
             button_handler.ButtonHandler(self.__mqtt_client, self.__my_context)
             self.__rfid_handler = RfidHandler(self.__mqtt_client, self.__my_context)
-
         self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context)  # start the status job
+        signal.signal(signal.SIGTERM, self.__shutdown)
+
+    def __shutdown(self, signum, frame):
+        print("Shutting down...")
+        self.__my_context.log.debug(f"signum={signum}, frame={frame}")
+        self.__my_context.log.info("Shutting down")
+        self.__my_pin_handler.leds_off()
+        self.__my_pin_handler.sirens_off()
+        self.__my_audio_player.stop_all()
+        self.__lcd.proc_paged({"page0": [
+            "",
+            "AGENT SHUTTING DOWN",
+            "",
+            "   BYE BYE...."
+        ]})
+        time.sleep(2)
+        sys.exit()
 
     def __init_mqtt(self):
         # Searching for a valid MQTT broker. Several addresses can be specified in the ~/.pyagent/config.json file
@@ -71,23 +87,29 @@ class Agent:
         self.__mqtt_client.max_inflight_messages_set(self.__my_context.configs["network"]["mqtt"]["max_inflight"])
 
         self.__mqtt_client.on_connect = self.on_connect
-        self.__mqtt_client.on_message = self.on_message
         self.__mqtt_client.on_disconnect = self.on_disconnect
+        self.__mqtt_client.on_message = self.on_message
 
         self.__search_for_broker()
 
         # self.__lcd.set_variable("broker", mqtt_broker)
-        if not self.__received_first_message_already:
-            net_status: [str, str] = {"wht": "netstatus", "blu": "netstatus"}
+        if not self.__received_first_visual_led_msg_already:
+            net_status: [str, str] = {"wht": "signal_strength",
+                                      "red": "off",
+                                      "ylw": "off",
+                                      "grn": "off",
+                                      "blu": "signal_strength"}
             self.__my_pin_handler.proc_pins(net_status)
         self.__post_init_page()
 
     def __post_init_page(self):
+        if self.__received_first_paged_msg_already:
+            return
         self.__lcd.proc_paged({"page0": [
             "I am ${agentname}",
             "pyAgent ${agversion}b${agbuild}",
             "broker: ${broker}",
-            "WiFi: ${wifi}"
+            "WiFi: ${wifi}  ${wifi_signal}"
         ]})
 
     def __pre_init_page(self):
@@ -95,7 +117,7 @@ class Agent:
             "${agentname} ==> ${broker}",
             "pyAgent ${agversion}b${agbuild}",
             "${ip}",
-            "WiFi: ${wifi}"
+            "WiFi: ${wifi}  ${wifi_signal}"
         ]})
 
     def on_connect(self, client, userdata, flags, rc):
@@ -105,7 +127,7 @@ class Agent:
         self.__mqtt_client.subscribe(self.__my_context.MQTT_INBOUND)
 
     def __on_timer_changed(self, key_name, old_value, new_value):
-        self.__my_context.log.trace(f"{key_name}: {old_value} -> {new_value}")
+        self.__my_context.log.debug(f"{key_name}: {old_value} -> {new_value}")
         if self.__progress_bar != key_name:
             return
         if new_value == 0:
@@ -145,7 +167,7 @@ class Agent:
         # "normal", "normal", "fast", "fast", "very_fast"
         try:
             cmd = msg.topic.rsplit('/', 1)[1]
-            self.__my_context.log.warning(f"received '{msg.payload}' from '{msg.topic}' cmd '{cmd}'")
+            self.__my_context.log.debug(f"received '{msg.payload}' from '{msg.topic}' cmd '{cmd}'")
             params_json = json.loads(msg.payload.decode('UTF-8'))
             match cmd:
                 case "visual":
@@ -161,19 +183,20 @@ class Agent:
                     else:
                         self.__my_pin_handler.proc_pins(params_json)
                         self.__progress_bar = ""
-                    self.__received_first_message_already = True
+                    self.__received_first_visual_led_msg_already = True
                 case "acoustic":
                     self.__my_pin_handler.proc_pins(params_json)
                 case "paged":
                     self.__lcd.proc_paged(params_json)
+                    self.__received_first_paged_msg_already = True
                 case "play":
                     self.__my_audio_player.proc_play(params_json)
                 case "rfid":
                     """
                         sets the mode how to handle rfid events
                         {
-                            "mode": "revive_player" | "report_tag" | "init_player_tags"
-                            "max_revives": 3
+                            "mode": "revive_player", "max_revives": 3 | "mode": "report_tag" | "mode": "init_player_tags"
+                            
                         }
                     """
                     if is_raspberrypi() and self.__rfid_handler:
@@ -186,29 +209,35 @@ class Agent:
                     """
                     if "_clearall" in params_json.keys():
                         # removes all timers
-                        self.__lcd.clear_timers()
+                        self.__my_context.clear_timers()
                     else:
                         for key, value in params_json.items():
-                            self.__lcd.set_timer(key, value)
+                            try:
+                                # make sure that strings and ints are accepted
+                                # refuse otherwise
+                                self.__my_context.set_timer(key, int(value))
+                            except ValueError:
+                                self.__my_context.log.warning(f"Invalid timer {value}")
                 case "vars":
                     for key, value in params_json.items():
-                        self.__my_context.variables[key] = value
+                        # variables are always strings
+                        self.__my_context.variables[key] = str(value)
                 case "reset_status":
                     self.__my_context.reset_stats()
                 case "status":
-                    self.__my_status_job.send_status()
+                    self.__my_status_job.send_status(self.__my_context.get_current_wifi_signal_strength())
                 case _:
                     self.__my_context.log.warning(f"got command '{cmd}' but don't know what to do with it")
         except Exception as ex:
             message = "An exception of type {0} occurred. Arguments:\n{1!r}".format(type(ex).__name__, ex.args)
-            self.__my_context.log.warning(f"oh shit: {message}")
+            self.__my_context.log.warning(f"{message}")
+            self.__my_context.log.warning("exception occurred while receiving an mqtt message. Ignoring it.")
 
     def __search_for_broker(self) -> str:
         self.__pre_init_page()
         trying_broker_with_index: int = 0
         mqtt_broker: str = ""
         while not self.__connected:
-            time.sleep(2)
             # if the context has a broker already, then we must be reconnecting. No need to try out all brokers again
             mqtt_broker = self.__my_context.mqtt_broker if self.__my_context.mqtt_broker \
                 else self.__my_context.configs["network"]["mqtt"]["broker"][trying_broker_with_index]
@@ -220,6 +249,7 @@ class Agent:
                 self.__mqtt_client.connect(mqtt_broker, port=self.__my_context.MQTT_PORT,
                                            keepalive=self.__my_context.configs["network"]["mqtt"]["keepalive"])
                 self.__mqtt_client.loop_start()
+                time.sleep(2)
             except OSError as os_ex:
                 trying_broker_with_index += 1
                 if trying_broker_with_index >= len(self.__my_context.configs["network"]["mqtt"]["broker"]):
@@ -255,4 +285,3 @@ class Agent:
         if signal_quality >= 80:
             net_status["blu"] = "signal_strength"
         self.__my_pin_handler.proc_pins(net_status)
-        self.__my_context.variables["wifi"] = f"{signal_quality}%"

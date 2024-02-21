@@ -47,7 +47,7 @@ class RfidHandler(Thread):
             return
 
         # default is the report uid mode
-        self.__mode: int = HANDLER_MODE_INIT_PLAYER_TAGS
+        self.__mode: int = HANDLER_MODE_REPORT_UID
         i2c_bus: int = self.__my_context.configs["hardware"]["rfid"]["pn532_i2c_bus"]
 
         try:
@@ -184,17 +184,20 @@ class RfidHandler(Thread):
     def proc_rfid(self, incoming: json):
         if not self.__active:
             return
-        self.__my_context.log.trace(incoming)
-        self.__max_revives_per_player = 0
-        self.__remaining_revives_per_agent = 0
-        match incoming["mode"]:
-            case "revive_player":
-                self.__mode = HANDLER_MODE_REVIVAL
-                self.__remaining_revives_per_agent = incoming["remaining_revives_per_agent"]
-            case "report_tag":
-                self.__mode = HANDLER_MODE_REPORT_UID
-            case "init_player_tags":
-                self.__max_revives_per_player = incoming["max_revives_per_player"]
-                self.__mode = HANDLER_MODE_INIT_PLAYER_TAGS
-            case _:
-                self.__my_context.log.warning("unknown rfid command")
+        try:
+            self.__my_context.log.trace(incoming)
+            self.__max_revives_per_player = 0
+            self.__remaining_revives_per_agent = 0
+            match incoming["mode"]:
+                case "revive_player":
+                    self.__mode = HANDLER_MODE_REVIVAL
+                    self.__remaining_revives_per_agent = incoming["remaining_revives_per_agent"]
+                case "report_tag":
+                    self.__mode = HANDLER_MODE_REPORT_UID
+                case "init_player_tags":
+                    self.__max_revives_per_player = incoming["max_revives_per_player"]
+                    self.__mode = HANDLER_MODE_INIT_PLAYER_TAGS
+                case _:
+                    self.__my_context.log.warning("unknown rfid command")
+        except Exception as ex:
+            self.__my_context.log.error(f"error parsing scheme: {ex}")
