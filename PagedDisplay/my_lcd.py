@@ -106,6 +106,9 @@ class MyLCD(Thread):
         self.__init_class()
         self.start()
 
+    def is_lcd_is_in_use(self) -> bool:
+        return self.__use_lcd
+
     def __init_custom_wifi_chars(self):
         """
         creating 5 chars to show the wi-fi signal strength in a common fashion

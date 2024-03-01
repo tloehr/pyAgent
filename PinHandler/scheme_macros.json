@@ -71,11 +71,18 @@
       -100
     ]
   },
-  "netstatus": {
+  "signal_strength": {
     "repeat": -1,
     "scheme": [
       250,
       -750
+    ]
+  },
+  "no_wifi": {
+    "repeat": -1,
+    "scheme": [
+      100,
+      -1000
     ]
   },
   "single_buzz": {
@@ -145,7 +152,7 @@
   "team_hurry_up_signal": {
     "repeat": -1,
     "scheme": [
-      1000,
+      3000,
       -10000
     ]
   },

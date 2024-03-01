@@ -47,7 +47,6 @@ class Agent:
         self.__my_context: Context = Context(self.WORKSPACE)
         self.__my_pin_handler = PinHandler(self.__my_context)
         self.__lcd = MyLCD(self.__my_context)
-        self.__my_context.variables["ip"] = self.__my_context.IPADDRESS
         self.__my_context.variables["broker"] = "-none-"
         # for the progress bar function
         self.__my_context += self.__on_timer_changed
@@ -93,13 +92,6 @@ class Agent:
         self.__search_for_broker()
 
         # self.__lcd.set_variable("broker", mqtt_broker)
-        if not self.__received_first_visual_led_msg_already:
-            net_status: [str, str] = {"wht": "signal_strength",
-                                      "red": "off",
-                                      "ylw": "off",
-                                      "grn": "off",
-                                      "blu": "signal_strength"}
-            self.__my_pin_handler.proc_pins(net_status)
         self.__post_init_page()
 
     def __post_init_page(self):
@@ -125,6 +117,15 @@ class Agent:
         self.__my_context.log.info("Connected to mqtt broker")
         self.__my_context.num_of_reconnects += 1
         self.__mqtt_client.subscribe(self.__my_context.MQTT_INBOUND)
+        # store local ip address
+        self.__my_context.store_local_ip_address()
+        if not self.__received_first_visual_led_msg_already:
+            net_status: [str, str] = {"wht": "signal_strength",
+                                      "red": "off",
+                                      "ylw": "off",
+                                      "grn": "off",
+                                      "blu": "signal_strength"}
+            self.__my_pin_handler.proc_pins(net_status)
 
     def __on_timer_changed(self, key_name, old_value, new_value):
         self.__my_context.log.debug(f"{key_name}: {old_value} -> {new_value}")
@@ -157,6 +158,8 @@ class Agent:
             time.sleep(2)
             try:
                 self.__my_context.log.debug("trying to reconnect")
+                if not self.__lcd.is_lcd_is_in_use():
+                    self.__render_signal_quality(self.__my_context.get_current_wifi_signal_strength()[0])
                 self.__mqtt_client.reconnect()
                 self.__connected = True
             except OSError as ose:
@@ -195,7 +198,9 @@ class Agent:
                     """
                         sets the mode how to handle rfid events
                         {
-                            "mode": "revive_player", "max_revives": 3 | "mode": "report_tag" | "mode": "init_player_tags"
+                            "mode": "mobile_spawn", "max_spawn_counter": 3 
+                            | "mode": "report_tag" 
+                            | "mode": "init_player_tags"
                             
                         }
                     """
@@ -242,7 +247,7 @@ class Agent:
             mqtt_broker = self.__my_context.mqtt_broker if self.__my_context.mqtt_broker \
                 else self.__my_context.configs["network"]["mqtt"]["broker"][trying_broker_with_index]
 
-            self.__render_signal_qualtiy(self.__my_context.get_current_wifi_signal_strength()[0])
+            self.__render_signal_quality(self.__my_context.get_current_wifi_signal_strength()[0])
             try:
                 self.__my_context.log.info(f"trying broker: '{mqtt_broker}'")
                 self.__my_context.variables["broker"] = mqtt_broker
@@ -260,7 +265,7 @@ class Agent:
 
         self.__my_context.mqtt_broker = mqtt_broker
 
-    def __render_signal_qualtiy(self, signal_quality: int):
+    def __render_signal_quality(self, signal_quality: int):
         """
         show current WI-FI signal strength on the led bar
         :param signal_quality: signal quality in percent

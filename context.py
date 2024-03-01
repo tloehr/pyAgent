@@ -46,7 +46,7 @@ class Context:
         self.__timer_listeners = []
         self.__timers: [str, [float, float]] = {}
         self.__WIFI_DEVICE: str = self.configs["network"]["device"]
-        self.IPADDRESS = self.__get_local_ip_address()
+        self.IPADDRESS = "0.0.0.0"
         self.num_of_reconnects: int = 0
         self.WORKSPACE = workspace
         self.MY_ID: str = self.configs["my_id"]
@@ -94,13 +94,14 @@ class Context:
     def reset_stats(self):
         self.num_of_reconnects = 0
 
-    def __get_local_ip_address(self) -> str:
+    def store_local_ip_address(self):
         ip: str = "0.0.0.0"
         if is_raspberrypi():
             wifi_dev = json.loads(popen(f"nmcli device show {self.__WIFI_DEVICE}|jc --nmcli").read())
             if wifi_dev and "ip4_address_1" in wifi_dev[0]:
                 ip = wifi_dev[0]["ip4_address_1"]
-        return ip
+        self.IPADDRESS = ip
+        self.variables["ip"] = ip
 
     # def set_variable(self, key: str, var: str):
     #     self.log.trace(f"setting variable {key} to {var}")
