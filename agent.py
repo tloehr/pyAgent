@@ -48,6 +48,7 @@ class Agent:
         self.__my_pin_handler = PinHandler(self.__my_context)
         self.__lcd = MyLCD(self.__my_context)
         self.__my_context.variables["broker"] = "-none-"
+        self.__my_context.store_local_ip_address()
         # for the progress bar function
         self.__my_context += self.__on_timer_changed
         self.__my_audio_player: AudioPlayer = AudioPlayer(self.__my_context)
@@ -58,7 +59,7 @@ class Agent:
             from Misc import button_handler
             button_handler.ButtonHandler(self.__mqtt_client, self.__my_context)
             self.__rfid_handler = RfidHandler(self.__mqtt_client, self.__my_context)
-        self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context)  # start the status job
+        self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context, self.__my_audio_player)  # start the status job
         signal.signal(signal.SIGTERM, self.__shutdown)
 
     def __shutdown(self, signum, frame):
@@ -84,14 +85,10 @@ class Agent:
         self.__mqtt_client = mqtt.Client(clean_session=self.__my_context.configs["network"]["mqtt"]["clean_session"],
                                          client_id=self.__my_context.MY_ID + str(uuid4()))
         self.__mqtt_client.max_inflight_messages_set(self.__my_context.configs["network"]["mqtt"]["max_inflight"])
-
         self.__mqtt_client.on_connect = self.on_connect
         self.__mqtt_client.on_disconnect = self.on_disconnect
         self.__mqtt_client.on_message = self.on_message
-
         self.__search_for_broker()
-
-        # self.__lcd.set_variable("broker", mqtt_broker)
         self.__post_init_page()
 
     def __post_init_page(self):

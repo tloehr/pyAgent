@@ -1,6 +1,7 @@
 import threading, time, json
 import paho.mqtt.client as mqtt
 import context
+from Misc.audio_player import AudioPlayer
 from context import Context
 from datetime import datetime
 from PagedDisplay import my_lcd
@@ -11,8 +12,10 @@ MQTT_STATUS: str = "/status"
 
 
 class StatusJob(threading.Thread):
-    def __init__(self, mqtt_client: mqtt.Client, my_context: Context):
+    def __init__(self, mqtt_client: mqtt.Client, my_context: Context, audio_player: AudioPlayer):
+        self.__audio_player = audio_player
         self.__status_counter: int = 0  # so we send a status on the first run
+        self.__bt_wakeup_counter: int = 0
         # self.__my_lcd = my_lcd
         self.__mqtt_client = mqtt_client
         self.__my_context = my_context
@@ -29,6 +32,9 @@ class StatusJob(threading.Thread):
 
             if self.__status_counter % 12 == 0:  # 12 loops with a 5 seconds sleep is a minute
                 self.send_status(wifi_info)
+                self.__audio_player.bt_wakeup()
+
+            self.__bt_wakeup_counter += 1
             self.__status_counter += 1
             time.sleep(5)
 

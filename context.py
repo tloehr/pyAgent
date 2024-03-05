@@ -11,18 +11,6 @@ from datetime import datetime, timedelta
 TRACE = 5
 
 
-# STATICS
-# WIFI_PERFECT: int = -30
-# WIFI_EXCELLENT: int = -50
-# WIFI_GOOD: int = -60
-# WIFI_FAIR: int = -67
-# WIFI_MINIMUM: int = -70
-# WIFI_UNSTABLE: int = -80
-# WIFI_BAD: int = -90
-# NO_WIFI: int = -99
-# WIFI: list[str] = ["NO_WIFI", "BAD", "FAIR", "GOOD", "PERFECT"]
-
-
 def is_raspberrypi():
     try:
         with io.open('/sys/firmware/devicetree/base/model', 'r') as m:
@@ -41,7 +29,7 @@ def trace(self, message, *args, **kws):
 class Context:
     def __init__(self, workspace: str):
         with open(PurePath(workspace, "config.json")) as my_config_file:
-            self.configs = json.load(my_config_file)
+            self.configs: {} = json.load(my_config_file)
         self.variables: [str, str] = {}
         self.__timer_listeners = []
         self.__timers: [str, [float, float]] = {}
@@ -62,9 +50,16 @@ class Context:
         self.MQTT_STATUS_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["status"])
         self.MQTT_BUTTON_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["button"])
         self.MQTT_RFID_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["rfid"])
+
         # check if the player bin really exists
-        self.PLAYER_BIN: str = self.configs["player"]["bin"] if exists(self.configs["player"]["bin"]) else ""
-        self.PLAYER_OPTS: str = self.configs["player"]["options"]
+        player_bin: str = self.configs.get("player", {}).get("bin", "")
+        self.PLAYER_BIN: str = player_bin if exists(player_bin) else ""
+        self.PLAYER_OPTS: str = self.configs.get("player", {}).get("options", "")
+
+        # keep_alive function for those frigging - auto power off bt speakers
+        self.BT_KEEP_ALIVE_SOUND: str = self.configs.get("player", {}).get("bt_keep_alive_sound", "")
+        self.BT_KEEP_ALIVE_INTERVAL: float = self.configs.get("player", {}).get("bt_keep_alive_interval", 0)
+
         # LOGGER SETUP
         logging.basicConfig()
         logging.addLevelName(TRACE, "TRACE")

@@ -12,6 +12,9 @@ COLS: int = 20
 SECONDS_PER_CYCLE: float = 0.5
 CYCLES_PER_PAGE: int = 4
 
+# todo: perhaps add a "OFFLINE" page that will added to the page cycle when mqtt connection is lost
+# todo: and removed again on reconnect
+
 # https://rplcd.readthedocs.io/en/stable/usage.html#creating-custom-characters
 LCD_ANTENNA = (
     0b11111,

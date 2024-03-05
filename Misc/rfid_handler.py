@@ -1,13 +1,16 @@
 import logging
 
+import context
 from context import Context
 import binascii
 import json
 import time
 from threading import Thread
-from pn532pi import Pn532, pn532
-from pn532pi import Pn532I2c
 import paho.mqtt.client as mqtt
+
+if context.is_raspberrypi():
+    from pn532pi import Pn532, pn532
+    from pn532pi import Pn532I2c
 
 MQTT_REPORT_EVENT: str = "/rfid"
 KEY_DEFAULT_KEYAB = bytearray([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
@@ -58,21 +61,19 @@ class RfidHandler(Thread):
             if not version_data:
                 self.__active = False
                 self.__my_context.log.warning("Didn't find a PN53x board")
+
+            self.__my_context.log.info(
+                f"Found chip PN5 {(version_data >> 24) & 0xFF} Firmware ver. {(version_data >> 16) & 0xFF}.{(version_data >> 8) & 0xFF}"
+            )
+            self.__nfc.SAMConfig()
+            self.__max_revives_per_player: int = 0
+            self.__remaining_revives_per_agent: int = 0
+            # start the thread
+            self.start()
+
         except OSError as os_error:
             self.__active = False
-            self.__my_context.log.error(os_error)
-
-        if not self.__active:
-            return
-
-        self.__my_context.log.info(
-            f"Found chip PN5 {(version_data >> 24) & 0xFF} Firmware ver. {(version_data >> 16) & 0xFF}.{(version_data >> 8) & 0xFF}"
-        )
-        self.__nfc.SAMConfig()
-        self.__max_revives_per_player: int = 0
-        self.__remaining_revives_per_agent: int = 0
-        # start the thread
-        self.start()
+            self.__my_context.log.warning(f"received OSError: {os_error} while trying to init the PN532 NFC device")
 
     def __authenticate(self, uid: bytearray, starting_block: int, number_of_blocks: int):
         all_authenticated: bool = True
