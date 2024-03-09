@@ -1,3 +1,4 @@
+import traceback
 import coloredlogs
 from pathlib import PurePath
 from os.path import exists
@@ -11,13 +12,15 @@ from datetime import datetime, timedelta
 TRACE = 5
 
 
-def is_raspberrypi():
+def is_raspberrypi() -> bool:
+    if not exists('/sys/firmware/devicetree/base/model'):
+        return False
     try:
         with io.open('/sys/firmware/devicetree/base/model', 'r') as m:
             if 'raspberry pi' in m.read().lower():
                 return True
-    except Exception:
-        pass
+    except Exception as ex:
+        print(f"Exception while reading {ex}")
     return False
 
 

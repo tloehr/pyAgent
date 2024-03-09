@@ -1,5 +1,6 @@
 import json
 import sys
+import traceback
 from datetime import datetime
 from pathlib import PurePath
 from agent import Agent
@@ -14,7 +15,24 @@ def main(args=None):
         exit(1)
     if "in_development" in args:
         buildnumber()
+    sys.excepthook = custom_excepthook
     Agent(args)
+
+
+def custom_excepthook(exc_type, exc_value, exc_traceback):
+    # Do not print exception when user cancels the program
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    print("An uncaught exception occurred:")
+    print(f"Type: {exc_type}", file=sys.stderr)
+    print(f"Value: {exc_value}", file=sys.stderr)
+
+    if exc_traceback:
+        format_exception = traceback.format_tb(exc_traceback)
+        for line in format_exception:
+            print(repr(line))
 
 
 def buildnumber():

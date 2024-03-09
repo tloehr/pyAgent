@@ -59,7 +59,7 @@ class Agent:
             from Misc import button_handler
             button_handler.ButtonHandler(self.__mqtt_client, self.__my_context)
             self.__rfid_handler = RfidHandler(self.__mqtt_client, self.__my_context)
-        self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context, self.__my_audio_player)  # start the status job
+        self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context, self.__my_audio_player, self.__rfid_handler.active)  # start the status job
         signal.signal(signal.SIGTERM, self.__shutdown)
 
     def __shutdown(self, signum, frame):

@@ -12,7 +12,8 @@ MQTT_STATUS: str = "/status"
 
 
 class StatusJob(threading.Thread):
-    def __init__(self, mqtt_client: mqtt.Client, my_context: Context, audio_player: AudioPlayer):
+    def __init__(self, mqtt_client: mqtt.Client, my_context: Context, audio_player: AudioPlayer, rfid_is_active: bool):
+        self.__rfid_is_active:bool = rfid_is_active
         self.__audio_player = audio_player
         self.__status_counter: int = 0  # so we send a status on the first run
         self.__bt_wakeup_counter: int = 0
@@ -52,7 +53,8 @@ class StatusJob(threading.Thread):
             "ap": wifi_info[2],
             "ssid": wifi_info[1],
             "signal_quality": wifi_info[0],
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "rfid_is_active": self.__rfid_is_active
         }
         self.__my_context.log.debug(f"Sending status #: {self.__status_counter}")
         # self.__check_signal_strength()

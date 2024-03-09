@@ -45,8 +45,8 @@ class RfidHandler(Thread):
         Thread.__init__(self)
 
         # inactive when no rfid is set in the configs
-        self.__active: bool = self.__my_context.configs["hardware"]["rfid"]
-        if not self.__active:
+        self.active: bool = "rfid" in self.__my_context.configs["hardware"]
+        if not self.active:
             return
 
         # default is the report uid mode
@@ -59,7 +59,7 @@ class RfidHandler(Thread):
 
             version_data: int = self.__nfc.getFirmwareVersion()
             if not version_data:
-                self.__active = False
+                self.active = False
                 self.__my_context.log.warning("Didn't find a PN53x board")
 
             self.__my_context.log.info(
@@ -72,7 +72,7 @@ class RfidHandler(Thread):
             self.start()
 
         except OSError as os_error:
-            self.__active = False
+            self.active = False
             self.__my_context.log.warning(f"received OSError: {os_error} while trying to init the PN532 NFC device")
 
     def __authenticate(self, uid: bytearray, starting_block: int, number_of_blocks: int):
@@ -117,7 +117,7 @@ class RfidHandler(Thread):
 
     def run(self):
         # loop only runs, when the card reader is working and active
-        while self.__active:
+        while self.active:
             try:
                 card_detected, uid = self.__nfc.readPassiveTargetID(
                     cardbaudrate=pn532.PN532_MIFARE_ISO14443A_106KBPS)
@@ -183,7 +183,7 @@ class RfidHandler(Thread):
                              [RECORD_TYPE_REVIVE_COUNTER, self.__max_revives_per_player, self.__max_revives_per_player])
 
     def proc_rfid(self, incoming: json):
-        if not self.__active:
+        if not self.active:
             return
         try:
             self.__my_context.log.trace(incoming)
