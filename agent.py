@@ -59,7 +59,8 @@ class Agent:
             from Misc import button_handler
             button_handler.ButtonHandler(self.__mqtt_client, self.__my_context)
             self.__rfid_handler = RfidHandler(self.__mqtt_client, self.__my_context)
-        self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context, self.__my_audio_player, self.__rfid_handler.active)  # start the status job
+        self.__my_status_job = StatusJob(self.__mqtt_client, self.__my_context, self.__my_audio_player,
+                                         self.__rfid_handler.active)  # start the status job
         signal.signal(signal.SIGTERM, self.__shutdown)
 
     def __shutdown(self, signum, frame):
@@ -113,7 +114,7 @@ class Agent:
         self.__connected = True
         self.__my_context.log.info("Connected to mqtt broker")
         self.__my_context.num_of_reconnects += 1
-        self.__mqtt_client.subscribe(self.__my_context.MQTT_INBOUND)
+        self.__mqtt_client.subscribe(self.__my_context.MQTT_INBOUND, qos=self.__my_context.MQTT_CMD_QOS)
         # store local ip address
         self.__my_context.store_local_ip_address()
         if not self.__received_first_visual_led_msg_already:

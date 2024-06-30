@@ -2,7 +2,7 @@ from context import is_raspberrypi, Context
 from gpiozero import Device, LED
 
 if is_raspberrypi():
-    from gpiozero.pins.rpigpio import RPiGPIOFactory
+    from gpiozero.pins.pigpio import PiGPIOFactory
 else:
     from gpiozero.pins.mock import MockFactory
 
@@ -10,7 +10,7 @@ else:
 class MyPin:
     def __init__(self, name: str, my_context: Context):
         if is_raspberrypi():
-            Device.pin_factory = RPiGPIOFactory()
+            Device.pin_factory = PiGPIOFactory()
         else:
             Device.pin_factory = MockFactory()
         self.name: str = name

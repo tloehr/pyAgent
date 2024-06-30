@@ -149,7 +149,7 @@ class RfidHandler(Thread):
         if not self.__mqtt_client.is_connected():
             return
         self.__mqtt_client.publish(self.__my_context.MQTT_OUTBOUND + MQTT_REPORT_EVENT, json.dumps(event),
-                                   self.__my_context.MQTT_RFID_QOS, True)
+                                   self.__my_context.MQTT_RFID_QOS, False)
 
     def __revive_player(self, uid):
         if self.__remaining_revives_per_agent <= 0:

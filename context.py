@@ -40,7 +40,7 @@ class Context:
         self.IPADDRESS = "0.0.0.0"
         self.num_of_reconnects: int = 0
         self.WORKSPACE = workspace
-        self.MY_ID: str = self.configs["my_id"]
+        self.MY_ID: str = self.configs.get("my_id", "ag99")
         self.variables["agentname"] = self.MY_ID
         self.variables["wifi"] = "--"
         self.LOW_TRIGGER: [str] = self.configs["hardware"]["triggered_on_low"]
@@ -50,9 +50,12 @@ class Context:
         self.MQTT_OUTBOUND: str = self.MQTT_ROOT_TOPIC + "/evt/" + self.MY_ID
         self.MQTT_PORT: int = int(self.configs["network"]["mqtt"]["port"])
         self.MQTT_INBOUND: str = self.MQTT_ROOT_TOPIC + "/cmd/" + self.MY_ID + "/#"
-        self.MQTT_STATUS_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["status"])
-        self.MQTT_BUTTON_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["button"])
-        self.MQTT_RFID_QOS: int = int(self.configs["network"]["mqtt"]["qos"]["rfid"])
+        # QOS OUTBOUND
+        self.MQTT_STATUS_QOS: int = int(self.configs.get("network", {}).get("mqtt", {}).get("qos", {}).get("status", 0))
+        self.MQTT_BUTTON_QOS: int = int(self.configs.get("network", {}).get("mqtt", {}).get("qos", {}).get("button", 2))
+        self.MQTT_RFID_QOS: int = int(self.configs.get("network", {}).get("mqtt", {}).get("qos", {}).get("rfid", 2))
+        # QOS INBOUND
+        self.MQTT_CMD_QOS: int = int(self.configs.get("network", {}).get("mqtt", {}).get("qos", {}).get("cmd", 2))
 
         # check if the player bin really exists
         player_bin: str = self.configs.get("player", {}).get("bin", "")

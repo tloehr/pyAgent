@@ -39,4 +39,4 @@ class ButtonHandler:
         event = {"button": state}
         self.__my_context.log.debug(f"{button} {state}")
         self.__mqtt_client.publish(self.__my_context.MQTT_OUTBOUND + "/" + button, json.dumps(event),
-                                   self.__my_context.MQTT_BUTTON_QOS, True)
+                                   self.__my_context.MQTT_BUTTON_QOS, False)
